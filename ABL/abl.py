@@ -18,7 +18,7 @@ class ABL():
     def get_lux_value(self):
         line = self.SerialPort.readline()
         print(line)
-        return float(line.strip())
+        return float(line)
 
     def getCOMPort(self):
         portlst = serial.tools.list_ports.comports()
@@ -27,7 +27,7 @@ class ABL():
             #print(port.description)
             #check if it's a STM or if using Arduino then change to the corresponding manufacturer
             #print(port.manufacturer)
-            if(port.manufacturer == "wch.cn"):
+            if(port.manufacturer == "wch.cn") or (port.manufacturer == "Arduino LLC (www.arduino.cc)"):
                 #print("YESSSS")
                 #open the connected serialport : Baudrate = 9600
                 ser = serial.Serial(port.name, 9600)
@@ -48,7 +48,7 @@ class ABL():
         serial.Serial.reset_input_buffer(self = self.SerialPort)
     def main(self):
         while self.running:
-            x = self.get_lux_value() * 100
+            x = self.get_lux_value()
             print(f"Lux: {x:.2f}")
             ln=np.log
             a=ln(x)

@@ -4,7 +4,6 @@ import time
 import json
 from PIL import Image
 
-import GUI.gui as gui
 import Notification20_20_20.Notification20_20_20 as Noti
 from ABL.abl import ABL
 import mediapipe as mp
@@ -14,8 +13,9 @@ from mediapipe.tasks.python import vision
 import cv2 as cv
 import threading
 import numpy as np
+from win11toast import toast
 
-customtkinter.set_default_color_theme("Oceanix.json")
+customtkinter.set_default_color_theme("lavender.json")
 
 def create_json():
     default = {"users": []}
@@ -140,10 +140,10 @@ class App(customtkinter.CTk):
         self.usbFrame = customtkinter.CTkFrame(self.settingFrame)
         self.startFrame =  customtkinter.CTkFrame(self)
 
-        self.UserLabel = customtkinter.CTkLabel(self.userFrame, text = "User:", font=('Comic Sans MS', 12))
-        self.TitleLabel = customtkinter.CTkLabel(self.userFrame, text = "Computer Syndrome Relief System",font=('Comic Sans MS', 21, "bold"), text_color="#1fcbd1")
-        self.CamAppLabel = customtkinter.CTkLabel(self.cameraFrame, text = "Camera",font=('Comic Sans MS', 21, "bold"), text_color="#1fcbd1")
-        self.USBAppLabel = customtkinter.CTkLabel(self.usbFrame, text = "USB Connection",font=('Comic Sans MS', 21, "bold"), text_color="#1fcbd1")
+        self.UserLabel = customtkinter.CTkLabel(self.userFrame, text = "User:", font=('Courier New', 12))
+        self.TitleLabel = customtkinter.CTkLabel(self.userFrame, text = "Computer Vision Syndrome Relief System",font=('Courier New', 17, "bold"))
+        self.CamAppLabel = customtkinter.CTkLabel(self.cameraFrame, text = "Camera",font=('Courier New', 21, "bold"))
+        self.USBAppLabel = customtkinter.CTkLabel(self.usbFrame, text = "USB Connection",font=('Courier New', 21, "bold"))
         self.USBAvailabilityLabel = customtkinter.CTkLabel(self.usbFrame, text = "Device not detected", text_color="#ff0000")
 
         self.startBlinkLabel = customtkinter.CTkLabel(self.startFrame, text = "Blink disable", text_color= "#ff0000")
@@ -151,7 +151,7 @@ class App(customtkinter.CTk):
         self.startABLLabel = customtkinter.CTkLabel(self.startFrame, text = "ABL disabled", text_color= "#ff0000")
 
         self.User = customtkinter.StringVar(value="Unknown")
-        self.optionUsers = customtkinter.CTkOptionMenu(self.userFrame,values=self.Users,command= self.changeUser,variable=self.User,font=('Comic Sans MS', 12))
+        self.optionUsers = customtkinter.CTkOptionMenu(self.userFrame,values=self.Users,command= self.changeUser,variable=self.User,font=('Courier New', 12))
 
         self.blinkButton = customtkinter.CTkSwitch(self.cameraFrame, variable= self.blink, onvalue=True, offvalue=False, text ="Blink drop notification", command = self.Refresh)
         self.noti20Button = customtkinter.CTkSwitch(self.cameraFrame, variable= self.noti20_20_20, onvalue=True, offvalue=False, text ="20-20-20 rule notification", command = self.Refresh)
@@ -228,11 +228,17 @@ class App(customtkinter.CTk):
         self.SerialABL.running = True
         getNoti = threading.Thread(target = lambda: taskUpdateNotification(self.detector, self.notification, blink = self.blink.get(), noti20 = self.noti20_20_20.get()))
         getSerial =  threading.Thread(target = lambda: getABL(self.SerialABL, self.ABL.get()))
+        shownotiTask = threading.Thread(target = lambda: self.displayNotification())
+        shownotiTask.daemon = True
         getNoti.daemon = True
         getSerial.daemon = True
         getNoti.start()
         getSerial.start()
-        self.SerialABL.serialFlush()
+        shownotiTask.start()
+        try:
+            self.SerialABL.serialFlush()
+        except:
+            pass
         self.startButton.configure(command = self.stop, text = "STOP")
         self.blinkButton.configure(state = "disabled")
         self.noti20Button.configure(state = "disabled")
@@ -246,7 +252,8 @@ class App(customtkinter.CTk):
         self.noti20Button.configure(state = "normal")
         self.ABLButton.configure(state = "normal")
         self.optionUsers.configure(state = "normal")
-        self.notification.reset()
+        self.notification.resetBlink()
+        self.notification.reset202020()
     def UpdateABL(self):
         while True:
             while (self.SerialABL.SerialPort) and ( not self.SerialABL.running):
@@ -269,8 +276,20 @@ class App(customtkinter.CTk):
                 self.Refresh()
                 self.USBAvailabilityLabel.configure(text = "Device not detected", text_color = "#FF0000")
             time.sleep(0.5)
-
-        
+    def displayNotification(self):
+        def showNotiQueue(queue):
+            for noti in queue:
+                toast(  "CVSRS Notification", 
+                        noti,
+                        icon=r"C:\Users\STVN\Pictures\Saved Pictures\edx profile pic.jpg",
+                        button={'activationType': 'protocol', 'arguments': 'https://google.com', 
+                        'content': 'Open Google'})
+                queue.pop()
+        while(notification.running):
+            if self.notification.notis != []:
+                print(self.notification.notis)
+                showNotiQueue(self.notification.notis)
+            time.sleep(1)
 def get_processVideoCap(cap):
     if cap.isOpened():
         success, frame = cap.read()
@@ -303,7 +322,7 @@ def taskUpdateNotification(detector, notification, blink, noti20):
                 if results.face_landmarks:
                     #print("frame")
                     notification.Update(results.face_landmarks[0], blinkEnabled = blink, noti20Enabled = noti20)
-                    notification.show_notification(blinkEnabled = blink, noti20Enabled = noti20)
+                    notification.push_notification(blinkEnabled = blink, noti20Enabled = noti20)
         cap.release()
 
 def getABL(ABL, abl):

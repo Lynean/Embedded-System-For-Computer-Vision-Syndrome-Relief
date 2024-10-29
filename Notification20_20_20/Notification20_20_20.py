@@ -290,6 +290,8 @@ class ANNModel(nn.Module):
 
 class Notification():
     def __init__(self, ann_model_path, svm_model_path):
+        #Notification Queue
+        self.notis = []
         #Blink model
         self.modelBlink = Blink(svm_model_path)
         self.mesh_coord = np.zeros(500, dtype=np.object_)
@@ -371,18 +373,20 @@ class Notification():
                     self.Face.Calibrate(frame, cap, window)
 
         if doneCalibrating: self.calibrated = True
-    def show_notification(self, blinkEnabled = False, noti20Enabled = False):
+    def push_notification(self, blinkEnabled = False, noti20Enabled = False, ):
         if self.currentTime == 0:
             self.currentTime = time.time()
         delta_time = time.time() - self.currentTime
-        if(delta_time >= 10):
+        if(delta_time >= 20):
+            print("****************",self.notis)
             if(noti20Enabled):
                 percentage = self.lookingFrameCount / self.totalFrameCount
                 print(f"You have been looking at the screen {(percentage*100):.2f}% of the last 20s")
                 self.lookingTime += delta_time*percentage
                 print(f"LookingTime: {self.lookingTime:.2f} seconds")
-                if(self.lookingTime >= 20*60):
+                if(self.lookingTime >= 20):
                     print("I advise you to look way for a while")
+                    self.notis.append("I advise you to look way for a while")
                     self.lookingTime = 0
                 self.lookingFrameCount = 0
                 self.totalFrameCount = 0
@@ -391,16 +395,15 @@ class Notification():
                 self.modelBlink.blink_rate = round(float((self.modelBlink.blink_count/delta_time)*60), 1)
                 if self.modelBlink.blink_rate <=  9:
                     print("Blink rate to low, possible indication of CVS")
+                    self.notis.append("Blink rate to low, possible indication of CVS")
                 print(f'Blink Count: {self.modelBlink.blink_count}')
                 print(f'Blink rate: {self.modelBlink.blink_rate}')
-                
-
-                self.modelBlink.blink_count = 0
-            toast("Title", "Message",icon=r"C:\Users\STVN\Pictures\Saved Pictures\edx profile pic.jpg",button={'activationType': 'protocol', 'arguments': 'https://google.com', 'content': 'Open Google'})
+                self.resetBlink()
             self.currentTime = time.time()
-    def reset(self):
+    def reset202020(self):
         self.lookingFrameCount = 0
         self.totalFrameCount = 0
-        self.blink_count = 0
         self.currentTime = time.time()
         self.lookingTime = 0
+    def resetBlink(self):
+        self.modelBlink.blink_count = 0
