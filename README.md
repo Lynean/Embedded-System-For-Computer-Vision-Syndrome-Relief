@@ -1,5 +1,7 @@
+**User guide**
+
 Optional: Create a virtualenv
 
-Install requirements packages: pip install -r /path/to/requirements.txt
+1. Install requirements packages: pip install -r /path/to/requirements.txt
 
-Run: python app.py
+2. Run: python app.py
