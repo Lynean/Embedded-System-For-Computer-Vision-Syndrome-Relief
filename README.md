@@ -7,6 +7,7 @@ Optional: Create a virtualenv
 2. Run: python app.py
 
 **Project details**
+
 This repository contains the code for a research project "Embedded System for Computer Vision Syndrome Relief." This project aims to ultilize software and hardware to help prevent and treat computer vision syndrome. The system has 3 main features:
 
 1. **_Blink rate drop notification:_** An Support Vector Machine (SVM) model is deployed to detect blink and calculate blink rate in real-time. If the blink rate drops below a threshold, which indicates that the user is likely to experience computer vision syndrome, the user is notified. The programs for this feature is located in the folder _blink_. We have developed 3 SVM models for blink detection. The first one is based on Soukupova T. & Cech J. 2016 paper "Eye blink detection using facial landmarks"; as proposed in the paper, blink detection is based on the Eye Aspect Ratio (EAR). The second one is an update of the first model: rather than using 3 eye coordinate pairs, we used 7 eye coordinate pairs. The last model is another update of the first one: for this model, we added a Moving Average Filter with a width of 2 to reduce noise when calculating EAR in real-time. We used 5 eye coordinate pairs to calculate EAR for this model. Regarding the accuracy, the models achieved 0.98, 0.95, and 0.98 respectively.
