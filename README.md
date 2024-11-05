@@ -14,7 +14,7 @@ This repository contains the code for a research project "Embedded System for Co
 
 2. **_20-20-20 notification:_** An ANN model is deployed to perform gaze-tracking in real time to identify if the user is looking at the computer screen. Copies of an ANN was trained on the Columbia Gaze Data Set, Gaze360 dataset and custom made dataset. The copies performed equally well under normal testing condition, and slightly worse in strict conditions. After 20 minutes of undistrupted gazing (without more than 20 seconds of looking away), the program will automatically notify the user to look (at least 2 feet) away for at least 20 seconds. The package for this feature is located in the folder _Notification20_20_20_. 
 
-3. **_Automatic brightness adjustment:_**
+3. **_Automatic brightness adjustment:_** Using the library screen_brightness_control
 
 4. **_App:_** Every software feature of this project is collected into a complete application. The users are required to log in each time they use the application.
 
