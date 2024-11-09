@@ -20,6 +20,8 @@ class BlinkNotifer:
         RIGHT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
         LEFT_IRIS = [474, 475, 476, 477]
         RIGHT_IRIS = [469, 470, 471, 472]
+        blink_rates = []
+        blink_rate = 0
 
         def frameProcess(frame, cvt_code):
             frame = cv.resize(frame, None, fx=2, fy=2, interpolation=cv.INTER_CUBIC)  # double the size of the frame
@@ -136,11 +138,20 @@ class BlinkNotifer:
 
                     #calculate blink rate: blink/min
                     elapsed_time = time.time() - start_time
-                    blink_rate = round(float((blink_count/elapsed_time)*60), 1)
+                    cv.putText(frame, f'Elapsed time: {elapsed_time}', (40, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
+                    if elapsed_time >= 60:
+                        blink_rate = blink_count
+                        '''if len(blink_rates) >= 3:
+                            removed = blink_rates.pop(0)
+                            blink_rates.append(blink_rate)
+                        else:
+                            blink_rates.append(blink_rate)'''
+                        blink_count = 0 # reset blink count for the next minute
+                        start_time = time.time()
 
                     #if blink rate falls in the range from 9 to 17 per minute, flash warning
-                    if blink_rate <=  9:
-                        cv.putText(frame, f'Blink rate too low.', (10, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
+                    if blink_rate > 0 and blink_rate <=  6:
+                        cv.putText(frame, f'Blink rate too low.', (100, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
                         cv.putText(frame, f'Possible indication of CVS', (10, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
 
 
@@ -155,5 +166,5 @@ class BlinkNotifer:
         video_stream.release()
         cv.destroyAllWindows()
 
-blink_notifier = BlinkNotifer(svm_model_path=r"\.ear_svm_model.pkl")
+blink_notifier = BlinkNotifer(svm_model_path=r"C:\Users\STVN\Desktop\PYTHON\Thuc_tap_BK\Embedded-System-For-Computer-Vision-Syndrome-Relief-main\Blink\ear_svm_model.pkl")
 blink_notifier.detect_blinks()
