@@ -132,7 +132,7 @@ for index, lst in enumerate(non_blink_frameID_lists):
     clarified_non_blink_frameID_lists.append(clarified_non_blink_frameID_list)
 
 
-'''# The negatives are those that are sampled from parts of the videos where no blink occurs, 
+# The negatives are those that are sampled from parts of the videos where no blink occurs, 
 # with 5 frames spacing and 7 frames margin from the ground-truth blinks.
 final_non_blink_frameID_lists = []
 for lst in clarified_non_blink_frameID_lists:
@@ -140,7 +140,7 @@ for lst in clarified_non_blink_frameID_lists:
         final_non_blink_frameID_list = lst[::7]
     except IndexError:
         pass
-    final_non_blink_frameID_lists.append(final_non_blink_frameID_list)'''
+    final_non_blink_frameID_lists.append(final_non_blink_frameID_list)
 
 
 # get database.data - 13 dimension support vector for each frame, starting with the blink frames
@@ -155,7 +155,7 @@ for index, lst in enumerate(clarified_blink_frameID_lists):
 
 # get database for non_blink_frameID_lists
 non_blink_database = []
-for index, lst in enumerate(clarified_non_blink_frameID_lists):
+for index, lst in enumerate(final_non_blink_frameID_lists):
     EAR_list = EAR_lists[index]
     for frameID in lst:
         frame_vector = EAR_list[frameID - 6 : frameID + 7]
