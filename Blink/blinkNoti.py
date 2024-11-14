@@ -22,6 +22,8 @@ class BlinkNotifer:
         RIGHT_IRIS = [469, 470, 471, 472]
         blink_rates = []
         blink_rate = 0
+        BLINK_TIME = 12
+        frame_count_started = False
 
         def frameProcess(frame, cvt_code):
             frame = cv.resize(frame, None, fx=2, fy=2, interpolation=cv.INTER_CUBIC)  # double the size of the frame
@@ -43,22 +45,29 @@ class BlinkNotifer:
                 # array[(x,y), (x,y)....] --> fill the previously initialized mesh_coord np array with pixel coords of the eye landmarks on the facemesh
 
 
+        #helper function to calculate EAR of an eye
         def calculate_left_eye_EAR(mesh_points):
             numerator = 0
             denomenator = 0
-            numerator += float(dist.euclidean(mesh_points[159], mesh_points[145]))
+            numerator += float(dist.euclidean(mesh_points[160], mesh_points[144]))
             numerator += float(dist.euclidean(mesh_points[158], mesh_points[153]))
+            numerator += float(dist.euclidean(mesh_points[159], mesh_points[145]))
+            numerator += float(dist.euclidean(mesh_points[161], mesh_points[163]))
+            numerator += float(dist.euclidean(mesh_points[157], mesh_points[154]))
             denomenator += float(dist.euclidean(mesh_points[33], mesh_points[133]))
-            return float((numerator + numerator) / (2 * denomenator))  # return EAR of left eye as a float
+            return float((numerator)/(5*denomenator))
 
 
         def calculate_right_eye_EAR(mesh_points):
             numerator = 0
             denomenator = 0
-            numerator += float(dist.euclidean(mesh_points[386], mesh_points[374]))
+            numerator += float(dist.euclidean(mesh_points[387], mesh_points[373]))
             numerator += float(dist.euclidean(mesh_points[385], mesh_points[380]))
+            numerator += float(dist.euclidean(mesh_points[386], mesh_points[374]))
+            numerator += float(dist.euclidean(mesh_points[384], mesh_points[381]))
+            numerator += float(dist.euclidean(mesh_points[388], mesh_points[390]))
             denomenator += float(dist.euclidean(mesh_points[263], mesh_points[362]))
-            return float((numerator + numerator) / (2 * denomenator))  # return EAR of right eye as a float
+            return float((numerator)/(5*denomenator))
 
 
        #create display window
@@ -79,12 +88,17 @@ class BlinkNotifer:
             blink_sequence_count = 0
             blink_sequence_start = False
             start_time = time.time()
+            EAR_values = []
+            moving_sum = 0
 
             # take video stream from video path
             video_stream = cv.VideoCapture(0)
 
             # process frames one frame at a time
             while video_stream.isOpened():
+                fps = video_stream.get(cv.CAP_PROP_FPS)
+                FRAME_THRESH = fps*BLINK_TIME
+
                 success, frame = video_stream.read()
 
                 if not success:
@@ -109,8 +123,24 @@ class BlinkNotifer:
                     right_eye_EAR = calculate_right_eye_EAR(self.mesh_coord)
                     averaged_EAR = float(left_eye_EAR + right_eye_EAR) / 2
 
+                    #apply moving average filter with a width of 5 to smoothen the data
+                    filter_width = 2
+                    # If the number of values in the list is less than filter width, append the EAR value
+                    if len(EAR_values) < filter_width:
+                        EAR_values.append(averaged_EAR)
+                        moving_sum += averaged_EAR  # Add to moving sum
+                        # Compute the average based on the current number of values
+                        smoothen_value = moving_sum / len(EAR_values)
+                    else:
+                        # Maintain sliding window
+                        oldest_value = EAR_values.pop(0)  # Remove the oldest value
+                        moving_sum = moving_sum - oldest_value + averaged_EAR  # Update moving sum
+                        EAR_values.append(averaged_EAR)
+                        # Compute the moving average
+                        smoothen_value = round(moving_sum / filter_width,8)
+
                     #store the averaged_EAR value in ear_values
-                    ear_buffer.append(averaged_EAR)
+                    ear_buffer.append(smoothen_value)
 
                     #start blink detection after ear_values have 13 value
                     if len(ear_buffer) > 13:
@@ -118,22 +148,21 @@ class BlinkNotifer:
 
                     if len(ear_buffer) == 13:
                         feature_vector = np.array(ear_buffer).reshape(1, -1)
-                        '''print(feature_vector)'''
                         prediction = self.model.predict(feature_vector)
+                    else:
+                        prediction = 2
 
-                        middle_frame_index = frame_count - 6
-
-                        if prediction == 1:
-                            blink_sequence_start = True
-                            blink_sequence_count += 1
-                        else:
-                            blink_sequence_start = False
-                            if 3 <= blink_sequence_count <= 12: #this is a problem, blink interval varies
-                                blink_count += 1
-                                cv.putText(frame, 'Blink Detected', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
-                            else:
-                                cv.putText(frame, 'No Blink', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
-                            blink_sequence_count = 0
+                    if prediction == 1:
+                        frame_count_started = True
+                    if frame_count_started:
+                        frame_count += 1
+                    if frame_count_started and prediction == 0:
+                        frame_count_started = False
+                        if frame_count <= FRAME_THRESH:
+                            blink_count += 1
+                            text = "Blink"
+                            cv.putText(frame, text, (100, 200), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv.LINE_AA)
+                        frame_count = 0
 
 
                     #calculate blink rate: blink/min
@@ -166,5 +195,5 @@ class BlinkNotifer:
         video_stream.release()
         cv.destroyAllWindows()
 
-blink_notifier = BlinkNotifer(svm_model_path=r"C:\Users\STVN\Desktop\PYTHON\Thuc_tap_BK\Embedded-System-For-Computer-Vision-Syndrome-Relief-main\Blink\ear_svm_model.pkl")
+blink_notifier = BlinkNotifer(svm_model_path=r"C:\Users\STVN\Desktop\PYTHON\Thuc_tap_BK\blink_notification\new_svm_maf_and_extracoords\ear_svm_maf_ec_model.pkl")
 blink_notifier.detect_blinks()
