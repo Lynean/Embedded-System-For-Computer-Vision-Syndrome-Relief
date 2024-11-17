@@ -88,7 +88,10 @@ with mp_face_mesh.FaceMesh(
     blink_count = 0
     blink_sequence_count = 0
     blink_sequence_start = False
+    frame_count_started = False
     start_time = time.time()
+    BLINK_TIME = 0.4
+    blink_rate = 0
 
     # take video stream from video path
     video_stream = cv.VideoCapture(0)
@@ -96,6 +99,9 @@ with mp_face_mesh.FaceMesh(
     # process frames one frame at a time
     while video_stream.isOpened():
         success, frame = video_stream.read()
+
+        fps = video_stream.get(cv.CAP_PROP_FPS)
+        FRAME_THRESH = fps*BLINK_TIME
 
         if not success:
             print("Video stream interupted")  # display error message if stream is interupted
@@ -156,7 +162,7 @@ with mp_face_mesh.FaceMesh(
                 moving_sum = moving_sum - oldest_value + averaged_EAR  # Update moving sum
                 EAR_values.append(averaged_EAR)
                 # Compute the moving average
-                smoothen_value = round(moving_sum / filter_width,4)
+                smoothen_value = round(moving_sum / filter_width,8)
 
             #store the averaged_EAR value in ear_values
             ear_buffer.append(smoothen_value)
@@ -169,31 +175,52 @@ with mp_face_mesh.FaceMesh(
                 feature_vector = np.array(ear_buffer).reshape(1, -1)
                 '''print(feature_vector)'''
                 prediction = model.predict(feature_vector)
+            else:
+                prediction = 2
 
-                middle_frame_index = frame_count - 6
-                
-                if prediction == 1:
-                    blink_sequence_start = True
-                    blink_sequence_count += 1
+            if prediction == 1:
+                frame_count_started = True
+            if frame_count_started:
+                frame_count += 1
+            if frame_count_started and prediction == 0:
+                frame_count_started = False
+                if frame_count <= FRAME_THRESH:
+                    blink_count += 1
+                    text = "Blink"
+                    cv.putText(frame, text, (100, 200), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv.LINE_AA)
+                frame_count = 0    
+
+            '''if prediction == 1:
+                blink_sequence_start = True
+                blink_sequence_count += 1
+            else:
+                blink_sequence_start = False     
+                if 3 <= blink_sequence_count <= 12: #this is a problem, blink interval varies
+                    blink_count += 1
+                    cv.putText(frame, 'Blink Detected', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
                 else:
-                    blink_sequence_start = False     
-                    if 3 <= blink_sequence_count <= 12: #this is a problem, blink interval varies
-                        blink_count += 1
-                        cv.putText(frame, 'Blink Detected', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
-                    else:
-                        cv.putText(frame, 'No Blink', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
-                    blink_sequence_count = 0
+                    cv.putText(frame, 'No Blink', (50, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv.LINE_AA)
+                blink_sequence_count = 0'''
                 
 
-            #calculate blink rate: blink/min 
+            #calculate blink rate: blink/min
             elapsed_time = time.time() - start_time
-            blink_rate = round(float((blink_count/elapsed_time)*60), 1)
+            cv.putText(frame, f'Elapsed time: {elapsed_time}', (40, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
+            if elapsed_time >= 60:
+                blink_rate = blink_count
+                '''if len(blink_rates) >= 3:
+                    removed = blink_rates.pop(0)
+                    blink_rates.append(blink_rate)
+                else:
+                    blink_rates.append(blink_rate)'''
+                blink_count = 0 # reset blink count for the next minute
+                start_time = time.time()
 
             #if blink rate falls in the range from 9 to 17 per minute, flash warning
-            if blink_rate <=  9:
-                cv.putText(frame, f'Blink rate too low.', (10, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
+            if blink_rate > 0 and blink_rate <=  6:
+                cv.putText(frame, f'Blink rate too low.', (100, 300), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
                 cv.putText(frame, f'Possible indication of CVS', (10, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 200, 255), 2, cv.LINE_AA)
-                
+
 
             cv.putText(frame, f'Blink Count: {blink_count}', (50, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 255), 2, cv.LINE_AA)
             cv.putText(frame, f'Blink rate: {blink_rate}', (300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 100, 255), 2, cv.LINE_AA)
