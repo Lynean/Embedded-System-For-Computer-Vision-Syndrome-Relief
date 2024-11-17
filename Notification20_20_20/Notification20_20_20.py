@@ -26,6 +26,8 @@ LEFT = 50
 RIGHT = 280
 NOSE = 1
 
+GAZE_WINDOW_FRAME_SIZE = 25
+
 class Blink():
     def __init__(self, svm_model_path):
         # Load the trained SVM model
@@ -88,6 +90,7 @@ class Blink():
 
 class FaceOrientation():
     def __init__(self):
+        self.calibrate = False
         self.classification = -1
         self.maxRatio = 0 #Hor to Vert ratio when looking straight
         #Face
@@ -112,13 +115,16 @@ class FaceOrientation():
         self.RVRatio = 0 #Right eye Vertical
         self.RHRatio = 0 #Right eye Horizontal
 
+        self.HDistRatio = 0
+        self.HDist_MaxRatio = 0 #Left eye HDist
+
         self.label = ""
         self.running = False
     def UpdateMax(self):
         maxVert = self.Vert
         maxHor = self.Hor
         self.maxRatio = maxHor / maxVert
-        self.minDistanceToNose = self.noseDistance
+        self.HDist_MaxRatio = self.HDistRatio
     def euclidean_distance(self, p1, p2):
         x1, y1 = p1
         x2, y2 = p2
@@ -138,11 +144,18 @@ class FaceOrientation():
         upper_left_coords, lower_left_coords = (mesh[386].x,mesh[386].y ),(mesh[374].x,mesh[374].y )
         upper_right_coords, lower_right_coords = (mesh[159].x,mesh[159].y ),(mesh[145].x,mesh[145].y )
 
-        self.LHRatio = self.euclidean_distance(left_iris_coords, leftmost_left_coords) / self.euclidean_distance(rightmost_left_coords, leftmost_left_coords)
-        self.RHRatio = self.euclidean_distance(right_iris_coords, leftmost_right_coords) / self.euclidean_distance(rightmost_right_coords, leftmost_right_coords)
+        LHDist = self.euclidean_distance(rightmost_left_coords, leftmost_left_coords)
+        RHDist = self.euclidean_distance(rightmost_right_coords, leftmost_right_coords)
+        LVDist = self.euclidean_distance(lower_left_coords, upper_left_coords)
+        RVDist = self.euclidean_distance(lower_right_coords, upper_right_coords)
 
-        self.LVRatio =  self.euclidean_distance(left_iris_coords, upper_left_coords) / self.euclidean_distance(lower_left_coords, upper_left_coords)
-        self.RVRatio = self.euclidean_distance(right_iris_coords, upper_right_coords) / self.euclidean_distance(lower_right_coords, upper_right_coords)
+        self.LHRatio = self.euclidean_distance(left_iris_coords, leftmost_left_coords) / LHDist
+        self.RHRatio = self.euclidean_distance(right_iris_coords, leftmost_right_coords) / RHDist
+
+        self.LVRatio =  self.euclidean_distance(left_iris_coords, upper_left_coords) / LVDist
+        self.RVRatio = self.euclidean_distance(right_iris_coords, upper_right_coords) / RVDist
+
+        self.HDistRatio = LHDist / RHDist
     def line_intersection(self, p1,p2, P1, P2):
         xdiff = (p1[0] - p2[0], P1[0] - P2[0])
         ydiff = (p1[1] - p2[1], P1[1] - P2[1])
@@ -172,15 +185,8 @@ class FaceOrientation():
         cv.line(frame,(int(self.left[0]*img_width), int(self.left[1]*img_height)), (int(self.right[0]*img_width), int(self.right[1]*img_height)), (0,0,255), 1)
         cv.circle(frame,(int(self.nose[0]*img_width), int(self.nose[1]*img_height)),1,(0,255,0),5)
         cv.circle(frame,(int(self.intersectX*img_width), int(self.intersectY*img_height)),1,(255,255),5)
-
-        cv.putText(frame,f"MAX_RATIO: {self.maxRatio:.2f}",(int(img_width*0.1),int(img_height*0.25)),cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
         cv.putText(frame,f"CURRENT_RATIO: {self.Ratio:.2f}",(int(img_width*0.1),int(img_height*0.30)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
         cv.putText(frame,f"MIN_NOSE_DISTANCE: {self.minDistanceToNose:.2f}",(int(img_width*0.1),int(img_height*0.35)),cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"CURRENT_NOSE_DISTANCE: {self.noseDistance:.2f}",(int(img_width*0.1),int(img_height*0.40)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"Left_H: {self.LHRatio:.2f}",(int(img_width*0.7),int(img_height*0.30)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"Left_V: {self.LVRatio:.2f}",(int(img_width*0.7),int(img_height*0.35)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"Right_H: {self.RHRatio:.2f}",(int(img_width*0.7),int(img_height*0.4)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"Right_V: {self.RVRatio:.2f}",(int(img_width*0.7),int(img_height*0.45)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
         #cv.putText(frame,f"{self.label}",(int(img_width*0.5),int(img_height*0.8)), cv.FONT_HERSHEY_COMPLEX, 1, (255,0,255), 5)
         if window == None:
             cv.imshow("Display",frame)
@@ -204,12 +210,15 @@ class FaceOrientation():
             return None, None
     def Update(self, mesh):
         #Choose a random scaler from -0.2 to 0.2 which is the amount of "randomness" addition to the Hor (not the Vert because the normalized Hor is the hor to Vert ratio)
+        #randomScaler = np.random.rand()*0.1*np.random.choice([-1,0,1])
         randomScaler = 0
+
         self.top = (mesh[TOP].x, mesh[TOP].y)
         self.bottom = (mesh[BOTTOM].x, mesh[BOTTOM].y)
         self.left = (mesh[LEFT].x, mesh[LEFT].y)
         self.right = (mesh[RIGHT].x, mesh[RIGHT].y)
         self.nose = (mesh[NOSE].x, mesh[NOSE].y)
+
 
         self.Get_Hor_Vert_Ratio(self.top, self.bottom, self.left, self.right)
         self.Get_Iris_Ratio(mesh)
@@ -218,46 +227,54 @@ class FaceOrientation():
         self.noseDistanceY = self.distance_to_line(self.left, self.right,self.nose) / self.Vert
         self.noseDistanceX = self.distance_to_line(self.top, self.bottom,self.nose) / self.Hor
         self.noseDistance = math.sqrt((self.noseDistanceY**2 + self.noseDistanceX**2))
+        
+        if self.calibrate:
+            self.UpdateMax()
+            self.minDistanceToNose = self.noseDistance
+            self.calibrate = False
+            return None
+        #print(self.minDistanceToNose)
         #randomness
-        rand_MaxRatio = self.maxRatio + randomScaler*self.maxRatio
-        rand_Ratio = self.Ratio + randomScaler*self.Ratio
+        self.Ratio = self.Ratio/(0.0000001+self.maxRatio)
+        rand_Ratio =  self.Ratio + randomScaler*self.Ratio
         rand_minDistanceToNose = self.minDistanceToNose + randomScaler*self.minDistanceToNose
-
-        return (rand_MaxRatio,
-                rand_Ratio,
+        return (rand_Ratio,
                 rand_minDistanceToNose,
                 self.LVRatio,
                 self.LHRatio,
                 self.RVRatio,
                 self.RHRatio,
+                #self.HDist_MaxRatio,
+                self.HDistRatio,
                 self.noseDistanceX,
                 self.noseDistanceY,
-                self.nose[0],
-                self.nose[1])
+                #self.nose[0],
+                #self.nose[1]
+                )
 
 class ANNModel(nn.Module):
     def __init__(self):
         super().__init__()
 
         ### layers
-        self.input  = nn.Linear(11,256)
+        self.input  = nn.Linear(9,256)
 
-        self.h1 = nn.Linear(256,1024)  # hidden layer
-        self.bnorm1 = nn.BatchNorm1d(256)
+        self.h1 = nn.Linear(256,512)  # hidden layer
+        #self.bnorm1 = nn.BatchNorm1d(256)
 
-        self.h2 = nn.Linear(1024,1024)  # hidden layer
-        self.bnorm2 = nn.BatchNorm1d(1024)
+        self.h2 = nn.Linear(512,1024)  # hidden layer
+        #self.bnorm2 = nn.BatchNorm1d(512)
 
         self.h3 = nn.Linear(1024,1024)
-        self.bnorm3 = nn.BatchNorm1d(1024)
+        #self.bnorm3 = nn.BatchNorm1d(1024)
 
-        self.h4 = nn.Linear(1024,1024)
-        self.bnorm4 = nn.BatchNorm1d(1024)
+        self.h4 = nn.Linear(1024,512)
+        #self.bnorm4 = nn.BatchNorm1d(1024)
 
-        self.h5 = nn.Linear(1024,105)
-        self.bnorm5 = nn.BatchNorm1d(1024)
+        self.h5 = nn.Linear(512,2)
+        #self.bnorm5 = nn.BatchNorm1d(512)
 
-        self.output = nn.Linear(105, 1)
+        self.output = nn.Linear(2, 1)
 
         # forward pass
     def predict(self,x):
@@ -265,19 +282,14 @@ class ANNModel(nn.Module):
         # pass the data through the input layer
         x = F.relu( self.input(x) )
         # pass the data through the hidden layer
-        x = self.bnorm1(x)
         x = F.relu( self.h1(x) )
 
-        x = self.bnorm2(x)
         x = F.relu( self.h2(x) )
 
-        x = self.bnorm3(x)
         x = F.relu( self.h3(x) )
 
-        x = self.bnorm4(x)
         x = F.relu( self.h4(x) )
 
-        x = self.bnorm5(x)
         x = F.relu( self.h5(x) )
         # output layer
         x = self.output(x)
@@ -300,10 +312,13 @@ class Notification():
         self.model202020.load_model(ann_model_path)
 
         self.Face = FaceOrientation()
+
         self.lookingFrameCount = 0
-        self.totalFrameCount = 0
+        self.timeMark = 0
         self.currentTime = 0
         self.lookingTime = 0
+        self.gazeWindowFrame= [0]
+
         self.calibrated = False
     #return suitable datatype for each model
     def prepareData(self,data_or_mesh, svm = False, ann = False):
@@ -328,7 +343,7 @@ class Notification():
             #print(z_scores)
 
             #convert to tensors
-            tensor = torch.tensor(z_scores).float()
+            tensor = torch.tensor(data_np).float()
             input_batch = tensor.unsqueeze(0)
             return input_batch
     def Update(self,mesh, blinkEnabled = False, noti20Enabled = False, calibrate = False):
@@ -374,32 +389,61 @@ class Notification():
 
         if doneCalibrating: self.calibrated = True
     def push_notification(self, blinkEnabled = False, noti20Enabled = False, ):
-        if self.currentTime == 0:
-            self.currentTime = time.time()
-        delta_time = time.time() - self.currentTime
-        if(delta_time >= 20):
-            print("****************",self.notis)
-            if(noti20Enabled):
-                percentage = self.lookingFrameCount / self.totalFrameCount
-                print(f"You have been looking at the screen {(percentage*100):.2f}% of the last 20s")
-                self.lookingTime += delta_time*percentage
-                print(f"LookingTime: {self.lookingTime:.2f} seconds")
-                if(self.lookingTime >= 20):
-                    print("I advise you to look way for a while")
-                    self.notis.append("I advise you to look way for a while")
-                    self.lookingTime = 0
-                self.lookingFrameCount = 0
-                self.totalFrameCount = 0
-            #calculate blink rate: blink/min
-            if(blinkEnabled):
-                self.modelBlink.blink_rate = round(float((self.modelBlink.blink_count/delta_time)*60), 1)
-                if self.modelBlink.blink_rate <=  9:
-                    print("Blink rate to low, possible indication of CVS")
-                    self.notis.append("Blink rate to low, possible indication of CVS")
-                print(f'Blink Count: {self.modelBlink.blink_count}')
-                print(f'Blink rate: {self.modelBlink.blink_rate}')
-                self.resetBlink()
-            self.currentTime = time.time()
+        self.currentTime = time.time()
+        #print("****************",self.Face.label)
+        neg = 1
+        pos = 1
+        if(noti20Enabled):
+            updateLookingFrame = False
+            #Prevent division by 0 error
+            numToPop = 0
+            print("LookingTime:", len(self.gazeWindowFrame))
+            #Get a 25s window frame moving
+            for timeStamp in self.gazeWindowFrame:
+                if timeStamp < 0:
+                    neg += 1
+                else:
+                    pos += 1
+                #Poping the excess element out, while checking their mark
+                if self.currentTime - abs(timeStamp) > GAZE_WINDOW_FRAME_SIZE:
+                    numToPop += 1
+            if self.Face.label == "Looking":
+                self.gazeWindowFrame.append(self.currentTime)
+            else:
+                self.gazeWindowFrame.append(self.currentTime*(-1))
+            for i in range(numToPop):
+                mark = abs(self.gazeWindowFrame.pop(0))
+                #if this pop == last timeMark -> a whole window frame has been replaced
+                if(mark == self.timeMark):
+                    updateLookingFrame = True
+                    #Set a new mark
+                    self.timeMark = self.currentTime
+            #print(len(self.gazeWindowFrame))
+            #Calculate lookingTime
+            noLookTime = (neg/(neg+pos))
+            if updateLookingFrame:
+                self.lookingTime += (1 - noLookTime)*(abs(self.gazeWindowFrame[-1]) - abs(self.gazeWindowFrame[0]))
+                print("LookingTime:",self.lookingTime)
+
+            #neg = 5; pos = 1
+
+            #If Non looktime > 80% of 25s frame
+            if noLookTime > 0.8 and (abs(self.gazeWindowFrame[-1]) - abs(self.gazeWindowFrame[0]) >= GAZE_WINDOW_FRAME_SIZE-1):
+                lookingFrameCount = 0
+                self.lookingTime = 0
+                print("You looked away !!!!!!!!!!!!!!!! Neg:",neg,"Pos:", pos)
+            if self.lookingTime > 40:
+                print("Look Away for 20s")
+                self.notis.append("Look Away for 20s")
+        #calculate blink rate: blink/min
+        if(blinkEnabled):
+            self.modelBlink.blink_rate = round(float((self.modelBlink.blink_count/60)*60), 1)
+            if self.modelBlink.blink_rate <=  9:
+                print("Blink rate to low, possible indication of CVS")
+                self.notis.append("Blink rate to low, possible indication of CVS")
+            print(f'Blink Count: {self.modelBlink.blink_count}')
+            print(f'Blink rate: {self.modelBlink.blink_rate}')
+            self.resetBlink()
     def reset202020(self):
         self.lookingFrameCount = 0
         self.totalFrameCount = 0
