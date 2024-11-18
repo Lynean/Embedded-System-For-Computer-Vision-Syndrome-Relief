@@ -19,6 +19,7 @@ LEFT_IRIS = [474,475,476,477]
 RIGHT_IRIS = [469,470,471,472]
 L_IRIS_CENTER = 473
 R_IRIS_CENTER = 468
+BLINK_TIME = 12
 
 TOP = 10
 BOTTOM = 199
@@ -27,11 +28,21 @@ RIGHT = 280
 NOSE = 1
 
 GAZE_WINDOW_FRAME_SIZE = 25
+FRAME_THRESH = 30*0.4
+
+ALLOWED_LOOKING_TIME = 60*20
+
+
 
 class Blink():
     def __init__(self, svm_model_path):
         # Load the trained SVM model
         self.model = joblib.load(svm_model_path)
+
+        self.frame_count_started = False
+        # create the tool
+        self.EAR_values = []
+        self.moving_sum = 0
 
         self.ear_buffer = []
         self.frame_count = 0
@@ -40,33 +51,67 @@ class Blink():
         self.blink_sequence_count = 0
         self.blink_sequence_start = False
         self.start_time = 0
-    
+        # Initialize MediaPipe FaceMesh
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.mesh_coord = np.zeros(500, dtype=np.object_)
     def calculate_left_eye_EAR(self, mesh_points):
         numerator = 0
         denomenator = 0
-        numerator += float(dist.euclidean(mesh_points[159], mesh_points[145]))
+        numerator += float(dist.euclidean(mesh_points[160], mesh_points[144]))
         numerator += float(dist.euclidean(mesh_points[158], mesh_points[153]))
+        numerator += float(dist.euclidean(mesh_points[159], mesh_points[145]))
+        numerator += float(dist.euclidean(mesh_points[161], mesh_points[163]))
+        numerator += float(dist.euclidean(mesh_points[157], mesh_points[154]))
         denomenator += float(dist.euclidean(mesh_points[33], mesh_points[133]))
-        return float((numerator + numerator) / (2 * denomenator))  # return EAR of left eye as a float
+        return float((numerator)/(5*denomenator))
 
 
     def calculate_right_eye_EAR(self, mesh_points):
         numerator = 0
         denomenator = 0
-        
-        numerator += float(dist.euclidean(mesh_points[386], mesh_points[374]))
+        numerator += float(dist.euclidean(mesh_points[387], mesh_points[373]))
         numerator += float(dist.euclidean(mesh_points[385], mesh_points[380]))
+        numerator += float(dist.euclidean(mesh_points[386], mesh_points[374]))
+        numerator += float(dist.euclidean(mesh_points[384], mesh_points[381]))
+        numerator += float(dist.euclidean(mesh_points[388], mesh_points[390]))
         denomenator += float(dist.euclidean(mesh_points[263], mesh_points[362]))
-        return float((numerator + numerator) / (2 * denomenator))  # return EAR of right eye as a float
-
+        return float((numerator)/(5*denomenator))
+    # def landmarksDetection(self, meshmap, img, results):  # meshmap is an array to store the coords, img is the frame, results is the results from mediapipe facemesh detector
+    #     img_height, img_width = img.shape[:2]  # get height and width of the frame
+    #     for idx in LEFT_EYE + RIGHT_EYE + LEFT_IRIS + RIGHT_IRIS:
+    #         point = results.face_landmarks[0][idx]  # results.multi_face_landmarks[0] access the first face in the results and the .landmark[idxex] access the coords of the eyes landmarks
+    #         # point is an object that looks like this:
+    #         # x: normalized_x_value
+    #         # y: normalized_y_value
+    #         # z: normalized_z_value
+    #         # apparently we use point.x, point.y to access the coords
+    #         meshmap[idx] = (int(point.x * img_width), int(point.y * img_height))  # converting the normalized coords into pixel coords and add it to the specified array
+    #         # array[(x,y), (x,y)....] --> fill the previously initialized mesh_coord np array with pixel coords of the eye landmarks on the facemesh
     def detect_blinks(self, meshmap):
-       #create display window
-        left_eye_EAR = self.calculate_left_eye_EAR(meshmap)
-        right_eye_EAR = self.calculate_right_eye_EAR(meshmap)
+
+        self.mesh_coord = meshmap
+        left_eye_EAR = self.calculate_left_eye_EAR(self.mesh_coord)
+        right_eye_EAR = self.calculate_right_eye_EAR(self.mesh_coord)
         averaged_EAR = float(left_eye_EAR + right_eye_EAR) / 2
 
+        #apply moving average filter with a width of 5 to smoothen the data
+        filter_width = 2
+        # If the number of values in the list is less than filter width, append the EAR value
+        if len(self.EAR_values) < filter_width:
+            self.EAR_values.append(averaged_EAR)
+            self.moving_sum += averaged_EAR  # Add to moving sum
+            # Compute the average based on the current number of values
+            smoothen_value = self.moving_sum / len(self.EAR_values)
+        else:
+            # Maintain sliding window
+            oldest_value = self.EAR_values.pop(0)  # Remove the oldest value
+            self.moving_sum = self.moving_sum - oldest_value + averaged_EAR  # Update moving sum
+            self.EAR_values.append(averaged_EAR)
+            # Compute the moving average
+            smoothen_value = round(self.moving_sum / filter_width,8)
+
         #store the averaged_EAR value in ear_values
-        self.ear_buffer.append(averaged_EAR)
+        self.ear_buffer.append(smoothen_value)
 
         #start blink detection after ear_values have 13 value
         if len(self.ear_buffer) > 13:
@@ -76,17 +121,20 @@ class Blink():
             feature_vector = np.array(self.ear_buffer).reshape(1, -1)
             '''print(feature_vector)'''
             prediction = self.model.predict(feature_vector)
-            middle_frame_index = self.frame_count - 6
+        else:
+            prediction = 2
 
-            if prediction == 1:
-                blink_sequence_start = True
-                self.blink_sequence_count += 1
-            else:
-                blink_sequence_start = False
-                if 3 <= self.blink_sequence_count <= 12: #this is a problem, blink interval varies
-                    self.blink_count += 1
-                    print("Blink")
-                self.blink_sequence_count = 0
+        if prediction == 1:
+            self.frame_count_started = True
+        if self.frame_count_started:
+            self.frame_count += 1
+        if self.frame_count_started and prediction == 0:
+            self.frame_count_started = False
+            if self.frame_count <= FRAME_THRESH:
+                self.blink_count += 1
+                print("BLINK:", self.blink_count)
+                #"Blink"
+            self.frame_count = 0
 
 class FaceOrientation():
     def __init__(self):
@@ -307,6 +355,7 @@ class Notification():
         #Blink model
         self.modelBlink = Blink(svm_model_path)
         self.mesh_coord = np.zeros(500, dtype=np.object_)
+        self.start_time = time.time()
         #20-20-20 model
         self.model202020 = ANNModel()
         self.model202020.load_model(ann_model_path)
@@ -397,7 +446,6 @@ class Notification():
             updateLookingFrame = False
             #Prevent division by 0 error
             numToPop = 0
-            print("LookingTime:", len(self.gazeWindowFrame))
             #Get a 25s window frame moving
             for timeStamp in self.gazeWindowFrame:
                 if timeStamp < 0:
@@ -432,18 +480,30 @@ class Notification():
                 lookingFrameCount = 0
                 self.lookingTime = 0
                 print("You looked away !!!!!!!!!!!!!!!! Neg:",neg,"Pos:", pos)
-            if self.lookingTime > 40:
+            if self.lookingTime > ALLOWED_LOOKING_TIME:
+                self.lookingTime /= 2
                 print("Look Away for 20s")
                 self.notis.append("Look Away for 20s")
         #calculate blink rate: blink/min
         if(blinkEnabled):
-            self.modelBlink.blink_rate = round(float((self.modelBlink.blink_count/60)*60), 1)
-            if self.modelBlink.blink_rate <=  9:
-                print("Blink rate to low, possible indication of CVS")
-                self.notis.append("Blink rate to low, possible indication of CVS")
-            print(f'Blink Count: {self.modelBlink.blink_count}')
-            print(f'Blink rate: {self.modelBlink.blink_rate}')
-            self.resetBlink()
+            #calculate blink rate: blink/min
+            elapsed_time = time.time() - self.start_time
+            if elapsed_time >= 60:
+                self.modelBlink.blink_rate = self.modelBlink.blink_count
+                '''if len(blink_rates) >= 3:
+                    removed = blink_rates.pop(0)
+                    blink_rates.append(blink_rate)
+                else:
+                    blink_rates.append(blink_rate)'''
+                self.modelBlink.blink_count = 0 # reset blink count for the next minute
+                self.start_time = time.time()
+
+            #if blink rate falls in the range from 9 to 17 per minute, flash warning
+            if self.modelBlink.blink_rate > 0 and self.modelBlink.blink_rate <=  6:
+                self.modelBlink.blink_rate = -1
+                print("Blink drop")
+                self.notis.append("BLINK!")
+
     def reset202020(self):
         self.lookingFrameCount = 0
         self.totalFrameCount = 0
