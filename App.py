@@ -296,7 +296,7 @@ def get_processVideoCap(cap):
         if not success:
             print("Video stream disrupted")
             return None
-        notification.totalFrameCount += 1
+        #notification.totalFrameCount += 1
         frame = cv.flip(frame, 1)
         frame.flags.writeable = False
         frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
@@ -330,7 +330,7 @@ def getABL(ABL, abl):
         print("ABL here")
         ABL.main()
 
-notification = Noti.Notification(r"Notification20_20_20/GazeANN.pt", r"Blink/ear_svm_model.pkl")
+notification = Noti.Notification(r"Notification20_20_20/GazeANN.pt", r"Blink/ear_svm_maf_ec_model.pkl")
 detector = face_detector_init('face_landmarker.task')
 
 app = App(detector ,notification)
