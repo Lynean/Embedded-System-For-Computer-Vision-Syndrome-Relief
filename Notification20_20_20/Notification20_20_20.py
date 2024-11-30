@@ -1,17 +1,11 @@
-import numpy as np
-import mediapipe as mp
-import cv2 as cv
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import time
-from PIL import Image
-import joblib
-from scipy.spatial import distance as dist
-import webbrowser
-from win11toast import toast
-
+from numpy import zeros, array, object_, asarray
+from mediapipe import Image, ImageFormat, solutions
+from cv2 import cvtColor,COLOR_BGR2RGB, COLOR_RGB2BGR, flip, VideoCapture, line, circle, putText, destroyAllWindows, imshow, waitKey, FONT_HERSHEY_COMPLEX
+from math import sqrt
+import onnxruntime
+from time import time, sleep
+from joblib import load as jobload
+from PIL.Image import fromarray
 
 LEFT_EYE =[ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385,384, 398 ]
 RIGHT_EYE=[ 33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246 ]
@@ -19,7 +13,7 @@ LEFT_IRIS = [474,475,476,477]
 RIGHT_IRIS = [469,470,471,472]
 L_IRIS_CENTER = 473
 R_IRIS_CENTER = 468
-BLINK_TIME = 12
+BLINK_TIME = 0.3
 
 TOP = 10
 BOTTOM = 199
@@ -28,16 +22,15 @@ RIGHT = 280
 NOSE = 1
 
 GAZE_WINDOW_FRAME_SIZE = 25
-FRAME_THRESH = 30*0.4
 
-ALLOWED_LOOKING_TIME = 60*20
+ALLOWED_LOOKING_TIME = 20*60
 
 
 
 class Blink():
     def __init__(self, svm_model_path):
         # Load the trained SVM model
-        self.model = joblib.load(svm_model_path)
+        self.model = jobload(svm_model_path)
 
         self.frame_count_started = False
         # create the tool
@@ -52,29 +45,34 @@ class Blink():
         self.blink_sequence_start = False
         self.start_time = 0
         # Initialize MediaPipe FaceMesh
-        self.mp_face_mesh = mp.solutions.face_mesh
-        self.mesh_coord = np.zeros(500, dtype=np.object_)
+        self.mp_face_mesh = solutions.face_mesh
+        self.mesh_coord = zeros(500, dtype=object_)
+    def euclidean_distance(self, p1, p2):
+        x1, y1 = p1
+        x2, y2 = p2
+        distance = sqrt((x2-x1)**2 + (y2-y1)**2)
+        return distance
     def calculate_left_eye_EAR(self, mesh_points):
         numerator = 0
         denomenator = 0
-        numerator += float(dist.euclidean(mesh_points[160], mesh_points[144]))
-        numerator += float(dist.euclidean(mesh_points[158], mesh_points[153]))
-        numerator += float(dist.euclidean(mesh_points[159], mesh_points[145]))
-        numerator += float(dist.euclidean(mesh_points[161], mesh_points[163]))
-        numerator += float(dist.euclidean(mesh_points[157], mesh_points[154]))
-        denomenator += float(dist.euclidean(mesh_points[33], mesh_points[133]))
+        numerator += float(self.euclidean_distance(mesh_points[160], mesh_points[144]))
+        numerator += float(self.euclidean_distance(mesh_points[158], mesh_points[153]))
+        numerator += float(self.euclidean_distance(mesh_points[159], mesh_points[145]))
+        numerator += float(self.euclidean_distance(mesh_points[161], mesh_points[163]))
+        numerator += float(self.euclidean_distance(mesh_points[157], mesh_points[154]))
+        denomenator += float(self.euclidean_distance(mesh_points[33], mesh_points[133]))
         return float((numerator)/(5*denomenator))
 
 
     def calculate_right_eye_EAR(self, mesh_points):
         numerator = 0
         denomenator = 0
-        numerator += float(dist.euclidean(mesh_points[387], mesh_points[373]))
-        numerator += float(dist.euclidean(mesh_points[385], mesh_points[380]))
-        numerator += float(dist.euclidean(mesh_points[386], mesh_points[374]))
-        numerator += float(dist.euclidean(mesh_points[384], mesh_points[381]))
-        numerator += float(dist.euclidean(mesh_points[388], mesh_points[390]))
-        denomenator += float(dist.euclidean(mesh_points[263], mesh_points[362]))
+        numerator += float(self.euclidean_distance(mesh_points[387], mesh_points[373]))
+        numerator += float(self.euclidean_distance(mesh_points[385], mesh_points[380]))
+        numerator += float(self.euclidean_distance(mesh_points[386], mesh_points[374]))
+        numerator += float(self.euclidean_distance(mesh_points[384], mesh_points[381]))
+        numerator += float(self.euclidean_distance(mesh_points[388], mesh_points[390]))
+        denomenator += float(self.euclidean_distance(mesh_points[263], mesh_points[362]))
         return float((numerator)/(5*denomenator))
     # def landmarksDetection(self, meshmap, img, results):  # meshmap is an array to store the coords, img is the frame, results is the results from mediapipe facemesh detector
     #     img_height, img_width = img.shape[:2]  # get height and width of the frame
@@ -87,7 +85,7 @@ class Blink():
     #         # apparently we use point.x, point.y to access the coords
     #         meshmap[idx] = (int(point.x * img_width), int(point.y * img_height))  # converting the normalized coords into pixel coords and add it to the specified array
     #         # array[(x,y), (x,y)....] --> fill the previously initialized mesh_coord np array with pixel coords of the eye landmarks on the facemesh
-    def detect_blinks(self, meshmap):
+    def detect_blinks(self, meshmap, framethresh = 12):
 
         self.mesh_coord = meshmap
         left_eye_EAR = self.calculate_left_eye_EAR(self.mesh_coord)
@@ -118,7 +116,7 @@ class Blink():
             self.ear_buffer.pop(0)
 
         if len(self.ear_buffer) == 13:
-            feature_vector = np.array(self.ear_buffer).reshape(1, -1)
+            feature_vector = array(self.ear_buffer).reshape(1, -1)
             '''print(feature_vector)'''
             prediction = self.model.predict(feature_vector)
         else:
@@ -130,7 +128,7 @@ class Blink():
             self.frame_count += 1
         if self.frame_count_started and prediction == 0:
             self.frame_count_started = False
-            if self.frame_count <= FRAME_THRESH:
+            if self.frame_count <= framethresh:
                 self.blink_count += 1
                 print("BLINK:", self.blink_count)
                 #"Blink"
@@ -173,10 +171,11 @@ class FaceOrientation():
         maxHor = self.Hor
         self.maxRatio = maxHor / maxVert
         self.HDist_MaxRatio = self.HDistRatio
+        self.minDistanceToNose = self.noseDistance
     def euclidean_distance(self, p1, p2):
         x1, y1 = p1
         x2, y2 = p2
-        distance = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+        distance = sqrt((x2-x1)**2 + (y2-y1)**2)
         return distance
     def Get_Hor_Vert_Ratio(self, top, bottom, left, right):
         self.Vert = self.euclidean_distance(top, bottom)
@@ -224,33 +223,33 @@ class FaceOrientation():
         a = (p1[1] - p2[1])/(p1[0] - p2[0])
         c = p1[1] - a*p1[0]
 
-        distance = ((-a)*P[0] + P[1] - c)/math.sqrt(a**2 + 1)
+        distance = ((-a)*P[0] + P[1] - c)/sqrt(a**2 + 1)
         return distance
     def Calibrate(self, frame,cap = None, window = None):
         doneCalibrating = False
         img_height, img_width  = frame.shape[:2]
-        cv.line(frame,(int(self.top[0]*img_width), int(self.top[1]*img_height)), (int(self.bottom[0]*img_width), int(self.bottom[1]*img_height)), (255,0,0), 1)
-        cv.line(frame,(int(self.left[0]*img_width), int(self.left[1]*img_height)), (int(self.right[0]*img_width), int(self.right[1]*img_height)), (0,0,255), 1)
-        cv.circle(frame,(int(self.nose[0]*img_width), int(self.nose[1]*img_height)),1,(0,255,0),5)
-        cv.circle(frame,(int(self.intersectX*img_width), int(self.intersectY*img_height)),1,(255,255),5)
-        cv.putText(frame,f"CURRENT_RATIO: {self.Ratio:.2f}",(int(img_width*0.1),int(img_height*0.30)), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        cv.putText(frame,f"MIN_NOSE_DISTANCE: {self.minDistanceToNose:.2f}",(int(img_width*0.1),int(img_height*0.35)),cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
-        #cv.putText(frame,f"{self.label}",(int(img_width*0.5),int(img_height*0.8)), cv.FONT_HERSHEY_COMPLEX, 1, (255,0,255), 5)
+        line(frame,(int(self.top[0]*img_width), int(self.top[1]*img_height)), (int(self.bottom[0]*img_width), int(self.bottom[1]*img_height)), (255,0,0), 1)
+        line(frame,(int(self.left[0]*img_width), int(self.left[1]*img_height)), (int(self.right[0]*img_width), int(self.right[1]*img_height)), (0,0,255), 1)
+        circle(frame,(int(self.nose[0]*img_width), int(self.nose[1]*img_height)),1,(0,255,0),5)
+        circle(frame,(int(self.intersectX*img_width), int(self.intersectY*img_height)),1,(255,255),5)
+        putText(frame,f"CURRENT_RATIO: {self.Ratio:.2f}",(int(img_width*0.1),int(img_height*0.30)), FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
+        putText(frame,f"MIN_NOSE_DISTANCE: {self.minDistanceToNose:.2f}",(int(img_width*0.1),int(img_height*0.35)),FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)
+        #.putText(frame,f"{self.label}",(int(img_width*0.5),int(img_height*0.8)), .FONT_HERSHEY_COMPLEX, 1, (255,0,255), 5)
         if window == None:
-            cv.imshow("Display",frame)
-            key = cv.waitKey(1)
+            imshow("Display",frame)
+            key = waitKey(1)
             if(key == ord("q")):
-                cv.destroyAllWindows()
+                destroyAllWindows()
                 cap.release()
             elif(key == ord("s")):
                 doneCalibrating = True
                 self.UpdateMax()
-                cv.destroyAllWindows()
+                destroyAllWindows()
                 cap.release()
             return doneCalibrating, None
         else:
-            frame = cv.cvtColor(frame,cv.COLOR_BGR2RGB)
-            frame = Image.fromarray(frame)
+            frame = cvtColor(frame,COLOR_BGR2RGB)
+            frame = fromarray(frame)
             try:
                 window.cameraImage.configure(light_image = frame, size = (img_width*0.5,img_height*0.5))
             except:
@@ -258,9 +257,8 @@ class FaceOrientation():
             return None, None
     def Update(self, mesh):
         #Choose a random scaler from -0.2 to 0.2 which is the amount of "randomness" addition to the Hor (not the Vert because the normalized Hor is the hor to Vert ratio)
-        #randomScaler = np.random.rand()*0.1*np.random.choice([-1,0,1])
+        #randomScaler = random.rand()*0.1*random.choice([-1,0,1])
         randomScaler = 0
-
         self.top = (mesh[TOP].x, mesh[TOP].y)
         self.bottom = (mesh[BOTTOM].x, mesh[BOTTOM].y)
         self.left = (mesh[LEFT].x, mesh[LEFT].y)
@@ -274,11 +272,10 @@ class FaceOrientation():
         self.intersectX, self.intersectY = (self.line_intersection(self.top,self.bottom,self.left,self.right))
         self.noseDistanceY = self.distance_to_line(self.left, self.right,self.nose) / self.Vert
         self.noseDistanceX = self.distance_to_line(self.top, self.bottom,self.nose) / self.Hor
-        self.noseDistance = math.sqrt((self.noseDistanceY**2 + self.noseDistanceX**2))
+        self.noseDistance = sqrt((self.noseDistanceY**2 + self.noseDistanceX**2))
         
         if self.calibrate:
             self.UpdateMax()
-            self.minDistanceToNose = self.noseDistance
             self.calibrate = False
             return None
         #print(self.minDistanceToNose)
@@ -300,65 +297,16 @@ class FaceOrientation():
                 #self.nose[1]
                 )
 
-class ANNModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        ### layers
-        self.input  = nn.Linear(9,256)
-
-        self.h1 = nn.Linear(256,512)  # hidden layer
-        #self.bnorm1 = nn.BatchNorm1d(256)
-
-        self.h2 = nn.Linear(512,1024)  # hidden layer
-        #self.bnorm2 = nn.BatchNorm1d(512)
-
-        self.h3 = nn.Linear(1024,1024)
-        #self.bnorm3 = nn.BatchNorm1d(1024)
-
-        self.h4 = nn.Linear(1024,512)
-        #self.bnorm4 = nn.BatchNorm1d(1024)
-
-        self.h5 = nn.Linear(512,2)
-        #self.bnorm5 = nn.BatchNorm1d(512)
-
-        self.output = nn.Linear(2, 1)
-
-        # forward pass
-    def predict(self,x):
-
-        # pass the data through the input layer
-        x = F.relu( self.input(x) )
-        # pass the data through the hidden layer
-        x = F.relu( self.h1(x) )
-
-        x = F.relu( self.h2(x) )
-
-        x = F.relu( self.h3(x) )
-
-        x = F.relu( self.h4(x) )
-
-        x = F.relu( self.h5(x) )
-        # output layer
-        x = self.output(x)
-        x = F.sigmoid(x)
-        # no dropout here!!
-        return x
-    def load_model(self, filename):
-        self.load_state_dict(torch.load(filename))
-        self.eval()
-
 class Notification():
     def __init__(self, ann_model_path, svm_model_path):
         #Notification Queue
         self.notis = []
         #Blink model
         self.modelBlink = Blink(svm_model_path)
-        self.mesh_coord = np.zeros(500, dtype=np.object_)
-        self.start_time = time.time()
+        self.mesh_coord = zeros(500, dtype=object_)
+        self.start_time = time()
         #20-20-20 model
-        self.model202020 = ANNModel()
-        self.model202020.load_model(ann_model_path)
+        self.model202020 = onnxruntime.InferenceSession(ann_model_path, providers=["CPUExecutionProvider"])
 
         self.Face = FaceOrientation()
 
@@ -369,10 +317,12 @@ class Notification():
         self.gazeWindowFrame= [0]
 
         self.calibrated = False
+    def array_to_image(self, array):
+        return Image(image_format=ImageFormat.SRGB, data=asarray(array))
     #return suitable datatype for each model
     def prepareData(self,data_or_mesh, svm = False, ann = False):
         if(svm):
-            meshmap = np.zeros(500, dtype=np.object_)
+            meshmap = zeros(500, dtype=object_)
             for idx in LEFT_EYE + RIGHT_EYE + LEFT_IRIS + RIGHT_IRIS:
                 point = data_or_mesh[idx]  # results.multi_face_landmarks[0] access the first face in the results and the .landmark[idxex] access the coords of the eyes landmarks
                 # point is an object that looks like this:
@@ -385,36 +335,31 @@ class Notification():
             #print(meshmap)
             return meshmap
         if(ann):
-            data_np = np.array(data_or_mesh, dtype=float)
-            mean = np.mean(data_np)
-            std_dev = np.std(data_np)
-            z_scores = (data_np - mean) / std_dev
+            data_np = array(data_or_mesh, dtype=float)
             #print(z_scores)
-
+            ort_inputs = {self.model202020.get_inputs()[0].name: ([data_np.astype(float)])}
             #convert to tensors
-            tensor = torch.tensor(data_np).float()
-            input_batch = tensor.unsqueeze(0)
-            return input_batch
-    def Update(self,mesh, blinkEnabled = False, noti20Enabled = False, calibrate = False):
+            return ort_inputs
+    def Update(self,mesh, blinkEnabled = False, noti20Enabled = False, calibrate = False, fps = 30):
         if(blinkEnabled):
+            FRAME_THRESH = fps*BLINK_TIME
+            #FRAME_THRESH = 12
             input_mesh = self.prepareData(mesh,svm = True)
-            self.modelBlink.detect_blinks(input_mesh)
+            self.modelBlink.detect_blinks(input_mesh, framethresh=FRAME_THRESH)
         if(noti20Enabled):
             data = self.Face.Update(mesh)
             if(data != None) and (not calibrate):
                 input_batch = self.prepareData(data, ann = True)
-                prediction = 0
-                with torch.no_grad():
-                    prediction = self.model202020.predict(input_batch)
-                if prediction >=.5:
+                ort_outs = self.model202020.run(None, input_batch)
+                if ort_outs[0] >=0:
                     self.Face.label = "Looking"
                     #print("Looking")
                     self.lookingFrameCount += 1
-                elif prediction <.5:
+                elif ort_outs[0] <0: 
                     self.Face.label = "Not Looking"
                     #print("Not Looking")
     def Face_Calibrate(self, detector, window = None):
-        cap = cv.VideoCapture(0)
+        cap = VideoCapture(0)
         doneCalibrating = False
         while (cap.isOpened() and self.calibrated == False):
             success,frame = cap.read()
@@ -422,12 +367,12 @@ class Notification():
                 print("Video stream disrupted")
                 break
 
-            frame = cv.flip(frame, 1)
+            frame = flip(frame, 1)
             frame.flags.writeable = False
-            frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(frame))
+            frame = cvtColor(frame, COLOR_BGR2RGB)
+            image = self.array_to_image(frame)
             results = detector.detect(image)
-            frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+            frame = cvtColor(frame, COLOR_RGB2BGR)
             #if exist a landmark      
             if results.face_landmarks:
                 self.Update(results.face_landmarks[0], calibrate=True, noti20Enabled = True)
@@ -435,10 +380,10 @@ class Notification():
                     doneCalibrating, frame = self.Face.Calibrate(frame, cap)
                 else:
                     self.Face.Calibrate(frame, cap, window)
-
+            sleep(0.05)
         if doneCalibrating: self.calibrated = True
     def push_notification(self, blinkEnabled = False, noti20Enabled = False, ):
-        self.currentTime = time.time()
+        self.currentTime = time()
         #print("****************",self.Face.label)
         neg = 1
         pos = 1
@@ -479,35 +424,39 @@ class Notification():
             if noLookTime > 0.8 and (abs(self.gazeWindowFrame[-1]) - abs(self.gazeWindowFrame[0]) >= GAZE_WINDOW_FRAME_SIZE-1):
                 lookingFrameCount = 0
                 self.lookingTime = 0
-                print("You looked away !!!!!!!!!!!!!!!! Neg:",neg,"Pos:", pos)
-            if self.lookingTime > ALLOWED_LOOKING_TIME:
+                #print("You looked away !!!!!!!!!!!!!!!! Neg:",neg,"Pos:", pos)
+            if self.lookingTime >= ALLOWED_LOOKING_TIME:
                 self.lookingTime /= 2
-                print("Look Away for 20s")
-                self.notis.append("Look Away for 20s")
+                #print("Look Away for 20s")
+                self.notis.append("20-20-20 Notification: You should look at least 20 meters away for at least 20 seconds!")
         #calculate blink rate: blink/min
         if(blinkEnabled):
             #calculate blink rate: blink/min
-            elapsed_time = time.time() - self.start_time
-            if elapsed_time >= 60:
+            elapsed_time = time() - self.start_time
+            if elapsed_time >= 30:
                 self.modelBlink.blink_rate = self.modelBlink.blink_count
+                self.notis.append(f"You blinked {self.modelBlink.blink_rate} times")
                 '''if len(blink_rates) >= 3:
                     removed = blink_rates.pop(0)
                     blink_rates.append(blink_rate)
                 else:
                     blink_rates.append(blink_rate)'''
                 self.modelBlink.blink_count = 0 # reset blink count for the next minute
-                self.start_time = time.time()
+                
 
-            #if blink rate falls in the range from 9 to 17 per minute, flash warning
-            if self.modelBlink.blink_rate > 0 and self.modelBlink.blink_rate <=  6:
-                self.modelBlink.blink_rate = -1
-                print("Blink drop")
-                self.notis.append("BLINK!")
-
+                #if blink rate falls in the range from 9 to 17 per minute, flash warning
+                if (self.modelBlink.blink_rate >= 0) and (self.modelBlink.blink_rate <=  6):
+                    self.modelBlink.blink_rate = -1
+                    #print("Blink drop")
+                    self.notis.append("Blink Drop Warning: Your blink rate is a possible indicator of Computer Vision Syndrome! You should blink more!")
+                self.start_time = time()   
     def reset202020(self):
         self.lookingFrameCount = 0
         self.totalFrameCount = 0
-        self.currentTime = time.time()
+        self.currentTime = time()
         self.lookingTime = 0
+        self.timeMark = 0
+        self.gazeWindowFrame = [0]
+        self.start_time = time()
     def resetBlink(self):
         self.modelBlink.blink_count = 0
