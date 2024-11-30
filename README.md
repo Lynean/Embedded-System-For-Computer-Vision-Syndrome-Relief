@@ -5,7 +5,7 @@ Executable link: https://drive.google.com/file/d/10ssLNNM28MEwqxBHyAoamh__IqjqD3
 
 **Project details**
 
-This repository contains the code for a research project "Embedded System for Computer Vision Syndrome Relief." This project uses software and hardware to help prevent and treat computer vision syndrome. The system has 3 main features:
+This repository contains the code and report paper for a research project "Embedded System for Computer Vision Syndrome Relief." This project uses software and hardware to help prevent and treat computer vision syndrome. The system has 3 main features:
 
 1. **_Blink rate drop notification:_** A Support Vector Machine (SVM) model is deployed to detect blink and calculate blink rate in real-time. If the blink rate drops below a threshold, which indicates that the user is likely to experience computer vision syndrome, the user is notified. The programs for this feature are located in the folder _blink_. We have developed 3 SVM models for blink detection. The first one is based on Soukupova T. & Cech J. 2016 paper "Eye blink detection using facial landmarks"; as proposed in the paper, blink detection is based on the Eye Aspect Ratio (EAR). The second one is an update of the first model: rather than using 3 eye coordinate pairs, we used 7 eye coordinate pairs. The last model is another update of the first one: for this model, we added a Moving Average Filter with a width of 2 to reduce noise when calculating EAR in real-time. We used 5 eye coordinate pairs to calculate EAR for this model. Regarding accuracy, the models achieved 0.98, 0.95, and 0.98 respectively.
 
