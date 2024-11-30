@@ -1,40 +1,38 @@
-import customtkinter
-import time
+from customtkinter import set_default_color_theme, CTkToplevel, CTkFrame, CTkLabel, CTkButton, CTkEntry, CTkImage, StringVar, BooleanVar, CTk, CTkOptionMenu, CTkSwitch
+from time import sleep
 
-import json
-from PIL import Image
+from json import dump, load
+from PIL.Image import open as ImageOpen
+from cv2 import cvtColor, CAP_PROP_FPS, COLOR_BGR2RGB, flip, VideoCapture
+from mediapipe.tasks.python import BaseOptions
+from mediapipe.tasks.python.vision import FaceLandmarkerOptions, FaceLandmarker
+
+from threading import Thread
+from win11toast import toast
 
 import Notification20_20_20.Notification20_20_20 as Noti
 from ABL.abl import ABL
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
 
-import cv2 as cv
-import threading
-import numpy as np
-from win11toast import toast
-
-customtkinter.set_default_color_theme("lavender.json")
+set_default_color_theme("lavender.json")
 
 def create_json():
     default = {"users": []}
     file = open("users.json",'w')
-    json.dump(default, file, indent= None)
+    dump(default, file, indent= None)
 # function to add to JSON
 def write_json(new_data, filename='users.json'):
     with open(filename,'r+') as file:
           # First we load existing data into a dict.
-        file_data = json.load(file)
+        file_data = load(file)
         # Join new_data with file_data inside emp_details
         file_data["users"].append(new_data)
         # Sets file's current position at offset.
         file.seek(0)
-        # convert back to json.
-        json.dump(file_data, file, indent = 4)
+        # convert back to 
+        dump(file_data, file, indent = 4)
 
 
-class AddUserWindow(customtkinter.CTkToplevel):
+class AddUserWindow(CTkToplevel):
     def __init__(self,root, detector, notification, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.root = root
@@ -44,29 +42,29 @@ class AddUserWindow(customtkinter.CTkToplevel):
         self.notification = notification
         self.detector = detector
 
-        self.userframe = customtkinter.CTkFrame(master=self)
-        self.MaxNitframe = customtkinter.CTkFrame(master=self,width=300)
-        self.cameraFrame = customtkinter.CTkFrame(master=self,width = 300)
+        self.userframe = CTkFrame(master=self)
+        self.MaxNitframe = CTkFrame(master=self,width=300)
+        self.cameraFrame = CTkFrame(master=self,width = 300)
 
-        self.inputLabel = customtkinter.CTkLabel(self.userframe, text="Name")
+        self.inputLabel = CTkLabel(self.userframe, text="Name")
         self.inputLabel.pack(side = "left")
         
-        self.inputEntry = customtkinter.CTkEntry(self.userframe, width = 200, height= 35,corner_radius= 10, placeholder_text="Input Username")
+        self.inputEntry = CTkEntry(self.userframe, width = 200, height= 35,corner_radius= 10, placeholder_text="Input Username")
         self.inputEntry.pack(side = "left")
 
-        self.MaxNitLabel = customtkinter.CTkLabel(self.MaxNitframe, text="Screen Max Brightness (nit)")
+        self.MaxNitLabel = CTkLabel(self.MaxNitframe, text="Screen Max Brightness (nit)")
         self.MaxNitLabel.pack(side = "left")
         
-        self.MaxNitEntry = customtkinter.CTkEntry(self.MaxNitframe, width = 200, height= 35,corner_radius= 10, placeholder_text="300")
+        self.MaxNitEntry = CTkEntry(self.MaxNitframe, width = 200, height= 35,corner_radius= 10, placeholder_text="300")
         self.MaxNitEntry.pack(side = "left")
 
-        self.Valid = customtkinter.CTkLabel(self.userframe, text = "")
+        self.Valid = CTkLabel(self.userframe, text = "")
         self.Valid.pack(side = "left")
 
-        self.RegButton = customtkinter.CTkButton(self, text ="Register", command = self.checkValid)
-        self.cameraImage = customtkinter.CTkImage(light_image = Image.open("User.png"), size = (200, 200))
-        self.cameraLabel = customtkinter.CTkLabel(self.cameraFrame,image= self.cameraImage, text = "", font=('Comic Sans MS', 12))
-        self.cameraInstruction = customtkinter.CTkLabel(self.cameraFrame, text = "Look straight at the screen and press Enter", font=('Comic Sans MS', 12))
+        self.RegButton = CTkButton(self, text ="Register", command = self.checkValid)
+        self.cameraImage = CTkImage(light_image = ImageOpen("User.png"), size = (200, 200))
+        self.cameraLabel = CTkLabel(self.cameraFrame,image= self.cameraImage, text = "", font=('Comic Sans MS', 12))
+        self.cameraInstruction = CTkLabel(self.cameraFrame, text = "Look straight at the screen and press Enter", font=('Comic Sans MS', 12))
         
         self.userframe.pack(side = "top", anchor = "center",pady = 10)
         self.MaxNitframe.pack(side = "top", anchor = "center",pady = 10)
@@ -86,7 +84,7 @@ class AddUserWindow(customtkinter.CTkToplevel):
             self.cameraFrame.pack(side = "top", anchor = "center",pady = 10)
             #Calibrate camera
             notification.calibrated = False
-            calibrateProcess = threading.Thread(target = lambda: self.notification.Face_Calibrate(self.detector, window = self))
+            calibrateProcess = Thread(target = lambda: self.notification.Face_Calibrate(self.detector, window = self))
             calibrateProcess.daemon = True
             calibrateProcess.start()
 
@@ -103,11 +101,11 @@ class AddUserWindow(customtkinter.CTkToplevel):
         self.root.AddOptions(new_user)
         self.root.changeUser(new_user["Username"])
         self.root.User = new_user["Username"]
-        self.root.optionUsers.configure(variable = customtkinter.StringVar(value=self.root.User))
+        self.root.optionUsers.configure(variable = StringVar(value=self.root.User))
         write_json(new_user)
         self.destroy()
 
-class App(customtkinter.CTk):
+class App(CTk):
     def __init__(self, detector, notification, *args, **kwargs):
         self.notification = notification
         self.detector = detector
@@ -120,7 +118,7 @@ class App(customtkinter.CTk):
         self.resizable(False, False)
         #Get User List
         file = open("users.json")
-        read_json = json.load(file)
+        read_json = load(file)
         self.Users = ["Add User"]
         self.info = []
         for user in read_json["users"]:
@@ -128,36 +126,36 @@ class App(customtkinter.CTk):
             self.info.append(user)
 
         #Class Variable
-        self.blink = customtkinter.BooleanVar(value=False)
-        self.noti20_20_20 = customtkinter.BooleanVar(value=False)
-        self.ABL = customtkinter.BooleanVar(value=False)
-        self.USB_available = customtkinter.BooleanVar(value = False)
+        self.blink = BooleanVar(value=False)
+        self.noti20_20_20 = BooleanVar(value=False)
+        self.ABL = BooleanVar(value=False)
+        self.USB_available = BooleanVar(value = False)
     
         #Widget
-        self.userFrame = customtkinter.CTkFrame(self)
-        self.settingFrame = customtkinter.CTkFrame(self)
-        self.cameraFrame = customtkinter.CTkFrame(self.settingFrame)
-        self.usbFrame = customtkinter.CTkFrame(self.settingFrame)
-        self.startFrame =  customtkinter.CTkFrame(self)
+        self.userFrame = CTkFrame(self)
+        self.settingFrame = CTkFrame(self)
+        self.cameraFrame = CTkFrame(self.settingFrame)
+        self.usbFrame = CTkFrame(self.settingFrame)
+        self.startFrame =  CTkFrame(self)
 
-        self.UserLabel = customtkinter.CTkLabel(self.userFrame, text = "User:", font=('Courier New', 12))
-        self.TitleLabel = customtkinter.CTkLabel(self.userFrame, text = "Computer Vision Syndrome Relief System",font=('Courier New', 17, "bold"))
-        self.CamAppLabel = customtkinter.CTkLabel(self.cameraFrame, text = "Camera",font=('Courier New', 21, "bold"))
-        self.USBAppLabel = customtkinter.CTkLabel(self.usbFrame, text = "USB Connection",font=('Courier New', 21, "bold"))
-        self.USBAvailabilityLabel = customtkinter.CTkLabel(self.usbFrame, text = "Device not detected", text_color="#ff0000")
+        self.UserLabel = CTkLabel(self.userFrame, text = "User:", font=('Courier New', 12))
+        self.TitleLabel = CTkLabel(self.userFrame, text = "ESCVSR",font=('Courier New', 25, "bold"))
+        self.CamAppLabel = CTkLabel(self.cameraFrame, text = "Camera",font=('Courier New', 21, "bold"))
+        self.USBAppLabel = CTkLabel(self.usbFrame, text = "USB Connection",font=('Courier New', 21, "bold"))
+        self.USBAvailabilityLabel = CTkLabel(self.usbFrame, text = "Device not detected", text_color="#ff0000")
 
-        self.startBlinkLabel = customtkinter.CTkLabel(self.startFrame, text = "Blink disable", text_color= "#ff0000")
-        self.startNoti20Label = customtkinter.CTkLabel(self.startFrame, text = "20-20-20 noti disabled", text_color= "#ff0000")
-        self.startABLLabel = customtkinter.CTkLabel(self.startFrame, text = "ABL disabled", text_color= "#ff0000")
+        self.startBlinkLabel = CTkLabel(self.startFrame, text = "Blink disable", text_color= "#ff0000")
+        self.startNoti20Label = CTkLabel(self.startFrame, text = "20-20-20 noti disabled", text_color= "#ff0000")
+        self.startABLLabel = CTkLabel(self.startFrame, text = "ABL disabled", text_color= "#ff0000")
 
-        self.User = customtkinter.StringVar(value="Unknown")
-        self.optionUsers = customtkinter.CTkOptionMenu(self.userFrame,values=self.Users,command= self.changeUser,variable=self.User,font=('Courier New', 12))
+        self.User = StringVar(value="Unknown")
+        self.optionUsers = CTkOptionMenu(self.userFrame,values=self.Users,command= self.changeUser,variable=self.User,font=('Courier New', 12))
 
-        self.blinkButton = customtkinter.CTkSwitch(self.cameraFrame, variable= self.blink, onvalue=True, offvalue=False, text ="Blink drop notification", command = self.Refresh)
-        self.noti20Button = customtkinter.CTkSwitch(self.cameraFrame, variable= self.noti20_20_20, onvalue=True, offvalue=False, text ="20-20-20 rule notification", command = self.Refresh)
-        self.ABLButton = customtkinter.CTkSwitch(self.usbFrame, variable= self.ABL, onvalue=True, offvalue=False, text ="Adaptive Brightness", command = self.Refresh)
+        self.blinkButton = CTkSwitch(self.cameraFrame, variable= self.blink, onvalue=True, offvalue=False, text ="Blink drop notification", command = self.Refresh)
+        self.noti20Button = CTkSwitch(self.cameraFrame, variable= self.noti20_20_20, onvalue=True, offvalue=False, text ="20-20-20 rule notification", command = self.Refresh)
+        self.ABLButton = CTkSwitch(self.usbFrame, variable= self.ABL, onvalue=True, offvalue=False, text ="Adaptive Brightness", command = self.Refresh)
         self.ABLButton.configure(state = "disabled")
-        self.startButton =  customtkinter.CTkButton(self.startFrame, text ="START", command = self.start)
+        self.startButton =  CTkButton(self.startFrame, text ="START", command = self.start)
 
         self.UserLabel.pack(side = "left", padx=10, pady=10)
         self.optionUsers.pack(side = "left", padx=0, pady=10)
@@ -187,7 +185,7 @@ class App(customtkinter.CTk):
 
         self.toplevel_window = None
 
-        self.ABLScan = threading.Thread(target = lambda: self.UpdateABL())
+        self.ABLScan = Thread(target = lambda: self.UpdateABL())
         self.ABLScan.daemon = True
         self.ABLScan.start()
     def changeUser(self, string):
@@ -195,7 +193,7 @@ class App(customtkinter.CTk):
             self.open_toplevel()
         else:
             file = open("users.json")
-            read_json = json.load(file)
+            read_json = load(file)
             for userinfo in read_json["users"]:
                 if userinfo["Username"] == string:
                     print(userinfo)
@@ -226,12 +224,16 @@ class App(customtkinter.CTk):
     def start(self):
         self.notification.running = True
         self.SerialABL.running = True
-        getNoti = threading.Thread(target = lambda: taskUpdateNotification(self.detector, self.notification, blink = self.blink.get(), noti20 = self.noti20_20_20.get()))
-        getSerial =  threading.Thread(target = lambda: getABL(self.SerialABL, self.ABL.get()))
-        shownotiTask = threading.Thread(target = lambda: self.displayNotification())
+
+        getNoti = Thread(target = lambda: taskUpdateNotification(self.detector, self.notification, blink = self.blink.get(), noti20 = self.noti20_20_20.get()))
+        getSerial =  Thread(target = lambda: getABL(self.SerialABL, self.ABL.get()))
+        shownotiTask = Thread(target = lambda: self.displayNotification())
+        
         shownotiTask.daemon = True
         getNoti.daemon = True
         getSerial.daemon = True
+        notification.reset202020()
+        notification.resetBlink()
         getNoti.start()
         getSerial.start()
         shownotiTask.start()
@@ -264,6 +266,7 @@ class App(customtkinter.CTk):
                     pass
                 self.ABLButton.configure(state = "normal")
                 self.USBAvailabilityLabel.configure(text = "Device detected", text_color = "#7FFC03")
+                sleep(0.05)
             while( not self.SerialABL.SerialPort) and ( not self.SerialABL.running):
                 if self.SerialABL.running:
                     break
@@ -271,25 +274,24 @@ class App(customtkinter.CTk):
                     self.SerialABL.getCOMPort()
                 except:
                     pass
-                self.ABL = customtkinter.BooleanVar(value=False)
+                self.ABL = BooleanVar(value=False)
                 self.ABLButton.configure(state = "disabled", variable = self.ABL)
                 self.Refresh()
                 self.USBAvailabilityLabel.configure(text = "Device not detected", text_color = "#FF0000")
-            time.sleep(0.5)
+                sleep(0.05)
+            sleep(0.5)
     def displayNotification(self):
-        def showNotiQueue(queue):
-            for noti in queue:
-                toast(  "CVSRS Notification", 
-                        noti,
-                        icon=r"C:\Users\STVN\Pictures\Saved Pictures\edx profile pic.jpg",
-                        button={'activationType': 'protocol', 'arguments': 'https://google.com', 
-                        'content': 'Open Google'})
-                queue.pop()
+        def showNotiQueue(string):
+            toast(  "ESCVSR Notifcation", 
+                    string,
+                    icon=r"C:\Users\STVN\Pictures\Saved Pictures\edx profile pic.jpg",
+                    button={'activationType': 'protocol', 'arguments': 'https://google.com', 
+                    'content': 'Open Google'})
         while(notification.running):
             if self.notification.notis != []:
                 print(self.notification.notis)
-                showNotiQueue(self.notification.notis)
-            time.sleep(1)
+                showNotiQueue(self.notification.notis.pop())
+            sleep(1)
 def get_processVideoCap(cap):
     if cap.isOpened():
         success, frame = cap.read()
@@ -297,32 +299,34 @@ def get_processVideoCap(cap):
             print("Video stream disrupted")
             return None
         #notification.totalFrameCount += 1
-        frame = cv.flip(frame, 1)
+        frame = flip(frame, 1)
         frame.flags.writeable = False
-        frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+        frame = cvtColor(frame, COLOR_BGR2RGB)
         return frame
 
 def face_detector_init(model_file):
-    base_options = python.BaseOptions(model_asset_path=model_file)
-    options = vision.FaceLandmarkerOptions(base_options=base_options,
+    base_options = BaseOptions(model_asset_path=model_file)
+    options = FaceLandmarkerOptions(base_options=base_options,
                                         output_face_blendshapes=False,
                                         output_facial_transformation_matrixes=False,
                                         num_faces=1)
-    return vision.FaceLandmarker.create_from_options(options)
+    return FaceLandmarker.create_from_options(options)
     
 def taskUpdateNotification(detector, notification, blink, noti20):
     if blink or noti20:
-        cap = cv.VideoCapture(0)
+        cap = VideoCapture(0)
+        fps = cap.get(CAP_PROP_FPS)
         while(cap.isOpened() and notification.running):
             frame = get_processVideoCap(cap)
             if frame.any() != None:
-                image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(frame))
+                image = notification.array_to_image(frame)
                 results = detector.detect(image)
                 #if exist a landmark      
                 if results.face_landmarks:
                     #print("frame")
-                    notification.Update(results.face_landmarks[0], blinkEnabled = blink, noti20Enabled = noti20)
+                    notification.Update(results.face_landmarks[0], blinkEnabled = blink, noti20Enabled = noti20, fps = fps)
                     notification.push_notification(blinkEnabled = blink, noti20Enabled = noti20)
+            sleep(0.05)
         cap.release()
 
 def getABL(ABL, abl):
@@ -330,7 +334,7 @@ def getABL(ABL, abl):
         print("ABL here")
         ABL.main()
 
-notification = Noti.Notification(r"Notification20_20_20/GazeANN.pt", r"Blink/ear_svm_maf_ec_model.pkl")
+notification = Noti.Notification(r"Notification20_20_20/Gaze_ANN.onnx", r"Blink/ear_svm_maf_ec_model.pkl")
 detector = face_detector_init('face_landmarker.task')
 
 app = App(detector ,notification)
