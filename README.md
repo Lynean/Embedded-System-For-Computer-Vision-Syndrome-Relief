@@ -1,3 +1,5 @@
+**Link to completed paper:** https://docs.google.com/document/d/1nJwIg26W-iQ5n-CgT4SpAF3pxAU9jwOed9e8pjVdbAs/edit?tab=t.0
+
 **User guide**
 
 Executable link: https://drive.google.com/file/d/10ssLNNM28MEwqxBHyAoamh__IqjqD3XW/view?usp=sharing
